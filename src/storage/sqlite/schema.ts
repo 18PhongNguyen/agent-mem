@@ -73,6 +73,7 @@ export function ensureServerStorageSchema(db: Database): void {
       server_session_id TEXT,
       source_type TEXT NOT NULL CHECK(source_type IN ('hook', 'worker', 'provider', 'server', 'api')),
       event_type TEXT NOT NULL,
+      platform_source TEXT,
       payload TEXT NOT NULL DEFAULT '{}',
       content_session_id TEXT,
       memory_session_id TEXT,
@@ -150,6 +151,11 @@ export function ensureServerStorageSchema(db: Database): void {
     );
   `);
 
+  const agentEventColumns = db.prepare('PRAGMA table_info(agent_events)').all() as Array<{ name: string }>;
+  if (!agentEventColumns.some(column => column.name === 'platform_source')) {
+    db.run('ALTER TABLE agent_events ADD COLUMN platform_source TEXT');
+  }
+
   db.run('CREATE INDEX IF NOT EXISTS idx_projects_root_path ON projects(root_path)');
   db.run('CREATE INDEX IF NOT EXISTS idx_server_sessions_project ON server_sessions(project_id)');
   db.run('CREATE INDEX IF NOT EXISTS idx_server_sessions_content ON server_sessions(content_session_id)');
@@ -157,6 +163,7 @@ export function ensureServerStorageSchema(db: Database): void {
   db.run('CREATE INDEX IF NOT EXISTS idx_server_sessions_status ON server_sessions(status)');
   db.run('CREATE INDEX IF NOT EXISTS idx_agent_events_project_time ON agent_events(project_id, occurred_at_epoch DESC)');
   db.run('CREATE INDEX IF NOT EXISTS idx_agent_events_session_time ON agent_events(server_session_id, occurred_at_epoch DESC)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_agent_events_platform_source ON agent_events(platform_source)');
   db.run('CREATE INDEX IF NOT EXISTS idx_agent_events_type ON agent_events(event_type)');
   db.run('CREATE INDEX IF NOT EXISTS idx_memory_items_project_time ON memory_items(project_id, created_at_epoch DESC)');
   db.run('CREATE INDEX IF NOT EXISTS idx_memory_items_session_time ON memory_items(server_session_id, created_at_epoch DESC)');
@@ -197,6 +204,11 @@ export function ensureServerStorageSchema(db: Database): void {
   }
   db.run('CREATE INDEX IF NOT EXISTS idx_memory_sources_item ON memory_sources(memory_item_id)');
   db.run('CREATE INDEX IF NOT EXISTS idx_memory_sources_legacy ON memory_sources(legacy_table, legacy_id)');
+  db.run(`
+    CREATE UNIQUE INDEX IF NOT EXISTS ux_memory_sources_source_uri
+    ON memory_sources(source_uri)
+    WHERE source_uri IS NOT NULL
+  `);
   db.run(`
     CREATE UNIQUE INDEX IF NOT EXISTS ux_memory_sources_legacy_source
     ON memory_sources(source_type, legacy_table, legacy_id)

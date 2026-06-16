@@ -73,6 +73,25 @@ export class ProjectsRepository {
     return this.getById(id)!;
   }
 
+  upsertByIdentity(input: CreateProject): Project {
+    const project = CreateProjectSchema.parse(input);
+    const existing = project.rootPath ? this.getByRootPath(project.rootPath) : null;
+    if (existing) {
+      return this.upsert({
+        id: existing.id,
+        name: project.name,
+        slug: project.slug ?? existing.slug,
+        rootPath: project.rootPath ?? existing.rootPath,
+        metadata: {
+          ...existing.metadata,
+          ...project.metadata,
+        },
+      });
+    }
+
+    return this.create(project);
+  }
+
   getById(id: string): Project | null {
     const row = this.db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as ProjectRow | null;
     return row ? mapProjectRow(row) : null;

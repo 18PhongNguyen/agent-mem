@@ -11,6 +11,7 @@ interface AgentEventRow {
   server_session_id: string | null;
   source_type: AgentEventSourceType;
   event_type: string;
+  platform_source: string | null;
   payload: string;
   content_session_id: string | null;
   memory_session_id: string | null;
@@ -25,6 +26,7 @@ function mapAgentEventRow(row: AgentEventRow): AgentEvent {
     serverSessionId: row.server_session_id,
     sourceType: row.source_type,
     eventType: row.event_type,
+    platformSource: row.platform_source,
     payload: JSON.parse(row.payload),
     contentSessionId: row.content_session_id,
     memorySessionId: row.memory_session_id,
@@ -45,16 +47,17 @@ export class AgentEventsRepository {
 
     this.db.prepare(`
       INSERT INTO agent_events (
-        id, project_id, server_session_id, source_type, event_type, payload,
+        id, project_id, server_session_id, source_type, event_type, platform_source, payload,
         content_session_id, memory_session_id, occurred_at_epoch, created_at_epoch
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       event.projectId,
       event.serverSessionId ?? null,
       event.sourceType,
       event.eventType,
+      event.platformSource ?? null,
       JSON.stringify(event.payload ?? {}),
       event.contentSessionId ?? null,
       event.memorySessionId ?? null,

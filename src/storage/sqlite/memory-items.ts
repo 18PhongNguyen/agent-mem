@@ -238,6 +238,11 @@ export class MemoryItemsRepository {
     return row ? mapMemorySourceRow(row) : null;
   }
 
+  getSourceByUri(sourceUri: string): MemorySource | null {
+    const row = this.db.prepare('SELECT * FROM memory_sources WHERE source_uri = ?').get(sourceUri) as MemorySourceRow | null;
+    return row ? mapMemorySourceRow(row) : null;
+  }
+
   listByProject(projectId: string, limit = 100): MemoryItem[] {
     const rows = this.db.prepare(`
       SELECT * FROM memory_items

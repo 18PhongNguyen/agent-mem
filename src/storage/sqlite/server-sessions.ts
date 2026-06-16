@@ -69,6 +69,48 @@ export class ServerSessionsRepository {
     return this.getById(id)!;
   }
 
+  upsertActive(input: CreateServerSession): ServerSession {
+    const session = CreateServerSessionSchema.parse(input);
+    const platformSource = session.platformSource ?? 'claude';
+    const existing = this.findActive({
+      projectId: session.projectId,
+      platformSource,
+      contentSessionId: session.contentSessionId ?? null,
+      memorySessionId: session.memorySessionId ?? null,
+    });
+
+    if (!existing) {
+      return this.create({
+        ...session,
+        platformSource,
+      });
+    }
+
+    const now = Date.now();
+    this.db.prepare(`
+      UPDATE server_sessions
+      SET
+        content_session_id = ?,
+        memory_session_id = ?,
+        title = ?,
+        metadata = ?,
+        updated_at_epoch = ?
+      WHERE id = ?
+    `).run(
+      session.contentSessionId ?? existing.contentSessionId,
+      session.memorySessionId ?? existing.memorySessionId,
+      session.title ?? existing.title,
+      stringifyJson({
+        ...existing.metadata,
+        ...session.metadata,
+      }),
+      now,
+      existing.id,
+    );
+
+    return this.getById(existing.id)!;
+  }
+
   markCompleted(id: string, completedAtEpoch = Date.now()): ServerSession | null {
     this.db.prepare(`
       UPDATE server_sessions
@@ -87,6 +129,35 @@ export class ServerSessionsRepository {
   getByMemorySessionId(memorySessionId: string): ServerSession | null {
     const row = this.db.prepare('SELECT * FROM server_sessions WHERE memory_session_id = ? ORDER BY started_at_epoch DESC LIMIT 1').get(memorySessionId) as ServerSessionRow | null;
     return row ? mapServerSessionRow(row) : null;
+  }
+
+  findActive(input: {
+    projectId: string;
+    platformSource: string;
+    contentSessionId?: string | null;
+    memorySessionId?: string | null;
+  }): ServerSession | null {
+    if (input.memorySessionId) {
+      const row = this.db.prepare(`
+        SELECT * FROM server_sessions
+        WHERE project_id = ? AND platform_source = ? AND memory_session_id = ? AND status = 'active'
+        ORDER BY started_at_epoch DESC
+        LIMIT 1
+      `).get(input.projectId, input.platformSource, input.memorySessionId) as ServerSessionRow | null;
+      if (row) return mapServerSessionRow(row);
+    }
+
+    if (input.contentSessionId) {
+      const row = this.db.prepare(`
+        SELECT * FROM server_sessions
+        WHERE project_id = ? AND platform_source = ? AND content_session_id = ? AND status = 'active'
+        ORDER BY started_at_epoch DESC
+        LIMIT 1
+      `).get(input.projectId, input.platformSource, input.contentSessionId) as ServerSessionRow | null;
+      if (row) return mapServerSessionRow(row);
+    }
+
+    return null;
   }
 
   listByProject(projectId: string): ServerSession[] {
