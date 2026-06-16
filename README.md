@@ -28,38 +28,70 @@
 
 ---
 
-## Quick Start
+## Installation
 
-### Claude Code
+### Step 1 — Install the base plugin
 
+Pick the method for your primary agent:
+
+**Claude Code**
 ```bash
 npx claude-mem install
-```
-
-Or from inside Claude Code:
-
-```bash
+# or from inside Claude Code:
 /plugin marketplace add thedotmack/claude-mem
 /plugin install claude-mem
 ```
 
-### Gemini CLI
-
+**Gemini CLI**
 ```bash
 npx claude-mem install --ide gemini-cli
 ```
 
-### OpenCode
-
+**OpenCode**
 ```bash
 npx claude-mem install --ide opencode
 ```
 
-### Cursor / Windsurf (MCP)
+Restart the IDE after installation.
 
-Copy the relevant template from [`integrations/`](integrations/) into your project root, then point your IDE at the worker's MCP endpoint (`http://localhost:37777/mcp`).
+---
 
-Restart the IDE. Memory from all agents will be shared automatically.
+### Step 2 — Enable shared memory for additional agents
+
+This fork adds agent-neutral memory so Cursor, Windsurf, Gemini CLI, and Codex can all read and write to the same store.
+
+**Register the MCP server**
+
+Copy the config file from `plugin/integrations/` to the correct location:
+
+| Agent | Source file | Destination |
+|---|---|---|
+| Cursor | `plugin/integrations/cursor-mcp.json` | `<project-root>/.cursor/mcp.json` |
+| Windsurf | `plugin/integrations/windsurf-mcp.json` | `<project-root>/.windsurf/mcp.json` |
+| Gemini CLI | `plugin/integrations/gemini-settings-patch.json` | merge into `~/.gemini/settings.json` |
+
+Claude Code and Codex pick up the MCP server automatically via the plugin — no action needed.
+
+**Add agent instructions**
+
+Copy the relevant snippet from [`plugin/integrations/agent-instructions.md`](plugin/integrations/agent-instructions.md) into each agent's system prompt file, replacing `{project-name}` with your repo identifier (e.g. `"my-org/my-repo"`):
+
+| Agent | System prompt file |
+|---|---|
+| Claude Code | `CLAUDE.md` |
+| Codex | `AGENTS.md` |
+| Cursor | `.cursor/rules/claude-mem.mdc` |
+| Gemini CLI | `GEMINI.md` |
+| Windsurf | `.windsurfrules` |
+
+**Verify**
+
+Ask any agent:
+> "Use memory_save to record that we decided to use shared memory across agents in this project."
+
+Then open a different agent — the memory should appear in injected context at session start.
+
+Full setup reference: [`plugin/integrations/SETUP.md`](plugin/integrations/SETUP.md)
 
 ---
 
