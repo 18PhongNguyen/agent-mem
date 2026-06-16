@@ -25,6 +25,9 @@ import { shouldShowSummary, renderSummaryFields } from './sections/SummaryRender
 import { renderPreviouslySection, renderFooter } from './sections/FooterRenderer.js';
 import { renderAgentEmptyState } from './formatters/AgentFormatter.js';
 import { renderHumanEmptyState } from './formatters/HumanFormatter.js';
+import { compileMemoryContext } from './MemoryContextCompiler.js';
+import { renderMemoryContext } from './sections/MemoryContextRenderer.js';
+import type { MemoryItem } from '../../core/schemas/memory-item.js';
 
 const VERSION_MARKER_PATH = path.join(
   homedir(),
@@ -116,6 +119,8 @@ export interface ContextInjectStats {
   tokens_injected: number;
   tokens_saved_vs_naive: number;
   search_strategy: string;
+  memory_source: 'memory_items' | 'legacy';
+  agent_count: number;
 }
 
 const STAT_TYPE_BUCKETS = new Set(['bugfix', 'discovery', 'decision', 'refactor']);
@@ -124,7 +129,7 @@ function buildInjectStats(
   observations: Observation[],
   summaries: SessionSummary[],
   full: boolean
-): ContextInjectStats {
+): Omit<ContextInjectStats, 'memory_source' | 'agent_count'> {
   const economics = calculateTokenEconomics(observations);
   const typeCounts: Record<string, number> = {
     bugfix: 0, discovery: 0, decision: 0, refactor: 0, other: 0,
@@ -159,6 +164,47 @@ function buildInjectStats(
   };
 }
 
+const MEMORY_STAT_TYPE_BUCKETS = new Set(['bugfix', 'discovery', 'decision', 'refactor']);
+
+function buildMemoryInjectStats(items: MemoryItem[]): ContextInjectStats {
+  const agentSources = new Set(
+    items
+      .map(i => (i.metadata as Record<string, unknown>)?.platformSource as string)
+      .filter(Boolean)
+  );
+  const typeCounts: Record<string, number> = {
+    bugfix: 0, discovery: 0, decision: 0, refactor: 0, other: 0,
+  };
+  for (const item of items) {
+    const bucket = MEMORY_STAT_TYPE_BUCKETS.has(item.type) ? item.type : 'other';
+    typeCounts[bucket]++;
+  }
+  const oldestEpoch = items.length > 0
+    ? Math.min(...items.map(i => i.createdAtEpoch))
+    : Date.now();
+  const timelineDepthDays = Math.max(0, Math.floor((Date.now() - oldestEpoch) / 86_400_000));
+  const totalChars = items.reduce((sum, i) =>
+    sum + (i.title?.length ?? 0) + (i.text?.length ?? 0) +
+    (i.facts?.join('').length ?? 0) + (i.concepts?.join('').length ?? 0), 0);
+
+  return {
+    observation_count: items.length,
+    session_count: agentSources.size,
+    timeline_depth_days: timelineDepthDays,
+    has_session_summary: false,
+    obs_type_bugfix: typeCounts.bugfix,
+    obs_type_discovery: typeCounts.discovery,
+    obs_type_decision: typeCounts.decision,
+    obs_type_refactor: typeCounts.refactor,
+    obs_type_other: typeCounts.other,
+    tokens_injected: Math.ceil(totalChars / 4),
+    tokens_saved_vs_naive: 0,
+    search_strategy: 'memory_items',
+    memory_source: 'memory_items',
+    agent_count: agentSources.size,
+  };
+}
+
 export async function generateContextWithStats(
   input?: ContextInput,
   forHuman: boolean = false
@@ -181,6 +227,16 @@ export async function generateContextWithStats(
   }
 
   try {
+    const compiled = compileMemoryContext(db.db, cwd, project, config.totalObservationCount);
+
+    if (compiled.source === 'memory_items') {
+      const tokenBudget = 2000;
+      const text = renderMemoryContext(compiled.items, compiled.projectName, tokenBudget, forHuman);
+      if (!text) return { text: renderEmptyState(project, forHuman), stats: null };
+      return { text, stats: buildMemoryInjectStats(compiled.items) };
+    }
+
+    // Legacy fallback
     const observations = projects.length > 1
       ? queryObservationsMulti(db, projects, config)
       : queryObservations(db, project, config);
@@ -202,7 +258,14 @@ export async function generateContextWithStats(
       forHuman
     );
 
-    return { text: output, stats: buildInjectStats(observations, summaries, Boolean(input?.full)) };
+    return {
+      text: output,
+      stats: {
+        ...buildInjectStats(observations, summaries, Boolean(input?.full)),
+        memory_source: 'legacy',
+        agent_count: 1,
+      },
+    };
   } finally {
     db.close();
   }
