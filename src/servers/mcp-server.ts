@@ -38,6 +38,7 @@ import {
   type SelectedRuntime,
   type ServerBetaRuntimeContext,
 } from '../services/hooks/runtime-selector.js';
+import { memorySaveToolDefinition, createMemorySaveHandler } from './tools/memory-save.js';
 
 let mcpServerDirResolutionFailed = false;
 const mcpServerDir = (() => {
@@ -889,6 +890,10 @@ NEVER fetch full details without filtering first. 10x token savings.`,
       if (typeof name !== 'string' || name.trim() === '') throw new Error('Missing required argument: name');
       return await callWorkerAPIPost(`/api/corpus/${encodeURIComponent(name)}/reprime`, rest);
     }
+  },
+  {
+    ...memorySaveToolDefinition,
+    handler: createMemorySaveHandler(callWorkerAPIPost),
   }
 ];
 
